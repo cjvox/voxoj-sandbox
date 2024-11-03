@@ -1,6 +1,7 @@
 package com.vox.voxojsandbox.controller;
 
-import com.vox.voxojsandbox.core.DockerSandbox;
+import com.vox.voxojsandbox.core.DockerSandBoxACM;
+import com.vox.voxojsandbox.core.DockerSandboxTemplate;
 import com.vox.voxojsandbox.modal.ExecuteRequest;
 import com.vox.voxojsandbox.modal.ExecuteResponse;
 import jakarta.annotation.Resource;
@@ -14,7 +15,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class MainController {
 
     @Resource
-    private DockerSandbox dockerSandbox;
+    private DockerSandboxTemplate dockerSandboxTemplate;
+
+    @Resource
+    private DockerSandBoxACM dockerSandBoxACM;
 
     // 定义鉴权请求头和密钥
     private static final String AUTH_REQUEST_HEADER = "auth";
@@ -31,7 +35,7 @@ public class MainController {
         if (executeRequest == null) {
             throw new RuntimeException("请求参数为空");
         }
-//        return dockerSandbox.execute(executeRequest);
-        return dockerSandbox.execute(executeRequest);
+//        return dockerSandboxTemplate.execute(executeRequest);
+        return dockerSandBoxACM.execute(executeRequest);
     }
 }

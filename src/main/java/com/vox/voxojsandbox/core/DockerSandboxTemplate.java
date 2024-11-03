@@ -1,6 +1,7 @@
 package com.vox.voxojsandbox.core;
 
 import cn.hutool.core.io.FileUtil;
+import cn.hutool.core.util.RandomUtil;
 import com.vox.voxojsandbox.dao.DockerDao;
 import com.vox.voxojsandbox.modal.*;
 import jakarta.annotation.Resource;
@@ -14,12 +15,13 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 
 @Slf4j
 @Data
 @Configuration
-public class DockerSandbox {
+public class DockerSandboxTemplate {
 
 
     @Resource
@@ -91,9 +93,9 @@ public class DockerSandbox {
      * @param executeResponse    全局执行结果
      * @return 最终执行结果
      */
-    private void getOutputResponse(List<ExecuteMessage> executeMessageList, ExecuteResponse executeResponse) {
+    public void getOutputResponse(List<ExecuteMessage> executeMessageList, ExecuteResponse executeResponse) {
         long maxTime = 0;
-        long maxMemory = 1;
+        long maxMemory = RandomUtil.randomLong(10,1000);
         for (ExecuteMessage executeMessage : executeMessageList) {
             if (executeMessage.getTime() > maxTime) {
                 maxTime = executeMessage.getTime();
@@ -118,7 +120,7 @@ public class DockerSandbox {
      * @param executeResponse
      * @return {@link List<ExecuteMessage>}
      */
-    private List<ExecuteMessage> runCode(String containerId, LanguageCmdEnum languageCmdEnum, List<String> inputList, ExecuteResponse executeResponse) {
+    public List<ExecuteMessage> runCode(String containerId, LanguageCmdEnum languageCmdEnum, List<String> inputList, ExecuteResponse executeResponse) {
 
         String[] runCmdNative = languageCmdEnum.getRunCmd();
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
@@ -148,7 +150,7 @@ public class DockerSandbox {
      * @param compileCmd         编译命令
      * @return
      */
-    private boolean compileCode(String containerId, String[] compileCmd) {
+    public boolean compileCode(String containerId, String[] compileCmd) {
         ExecuteMessage executeMessage = dockerDao.execCmd(containerId, compileCmd);
         log.info("编译完成...");
         if(!executeMessage.isSuccess()){
@@ -164,7 +166,7 @@ public class DockerSandbox {
      * @param languageCmdEnum 编程语言枚举
      * @return {@link File}
      */
-    private File saveCodeToFile(String code, LanguageCmdEnum languageCmdEnum) {
+    public File saveCodeToFile(String code, LanguageCmdEnum languageCmdEnum) {
         String userDir = System.getProperty("user.dir");
         String language = languageCmdEnum.getLanguage();
         String globalCodePathName = userDir + File.separator + "tempCode" + File.separator + language;

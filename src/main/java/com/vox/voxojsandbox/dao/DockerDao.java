@@ -5,9 +5,8 @@ import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
-import com.github.dockerjava.api.model.Frame;
-import com.github.dockerjava.api.model.HostConfig;
-import com.github.dockerjava.api.model.StreamType;
+import com.github.dockerjava.api.command.StatsCmd;
+import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
@@ -22,13 +21,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StopWatch;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * docker 相关操作
@@ -159,6 +156,105 @@ public class DockerDao {
         }
     }
 
+    public ExecuteMessage execCmdInteractive(String containerId, String[] cmd, InputStream ArgsInputStream) throws IOException {
+        StopWatch stopWatch = new StopWatch();
+        stopWatch.start();
+
+        // 正常返回信息
+        ByteArrayOutputStream resultStream = new ByteArrayOutputStream();
+        // 错误信息
+        ByteArrayOutputStream errorResultStream = new ByteArrayOutputStream();
+
+        // 标记结果是否成功
+        final boolean[] result = {true};
+        final boolean[] timeout = {true};
+        long[] memory= {0};
+        try (ResultCallback.Adapter<Frame> frameAdapter = new ResultCallback.Adapter<Frame>() {
+
+            @Override
+            public void onComplete() {
+                // 任务是否超时
+                timeout[0] = false;
+                super.onComplete();
+            }
+
+            @Override
+            public void onNext(Frame frame) {
+                StreamType streamType = frame.getStreamType();
+                byte[] payload = frame.getPayload();
+
+                if (StreamType.STDERR.equals(streamType)) {
+                    try {
+                        result[0] = false;
+                        errorResultStream.write(payload);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                } else {
+                    try {
+                        resultStream.write(payload);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                super.onNext(frame);
+            }
+        }) {
+            // 创建执行命令
+            ExecCreateCmdResponse execCompileCmdResponse = DOCKER_CLIENT.execCreateCmd(containerId)
+                    .withCmd(cmd)
+                    .withAttachStderr(true)
+                    .withAttachStdin(true)  // 打开输入流
+                    .withAttachStdout(true)
+                    .exec();
+            String execId = execCompileCmdResponse.getId();
+
+            // 启动命令执行，并等待执行完成或超时
+            DOCKER_CLIENT.execStartCmd(execId)
+                    .withStdIn(ArgsInputStream)// 传递输入流
+                    .exec(frameAdapter)
+                    .awaitCompletion(timeoutLimit, timeUnit);
+
+//            DOCKER_CLIENT.statsCmd(containerId)
+//                    .exec(new ResultCallback.Adapter<Statistics>() {
+//                        @Override
+//                        public void onNext(Statistics stats) {
+//                            MemoryStatsConfig memoryStats = stats.getMemoryStats();
+//                            memory[0] = memoryStats.getUsage();
+//                            super.onNext(stats);
+//                        }
+//                    })
+//                    .awaitCompletion(timeoutLimit, timeUnit); // 等待获取内存使用情况
+            stopWatch.stop();
+
+            // 超时处理
+            if (timeout[0]) {
+                return ExecuteMessage
+                        .builder()
+                        .success(false)
+                        .errorMessage("执行超时")
+                        .build();
+            }
+
+            return ExecuteMessage
+                    .builder()
+                    .success(result[0])
+                    .message(StringUtils.chop(resultStream.toString()))
+                    .errorMessage(errorResultStream.toString())
+                    .time(stopWatch.getTotalTimeMillis())
+                    .memory(memory[0])
+                    .build();
+
+        } catch (IOException | InterruptedException e) {
+            return ExecuteMessage
+                    .builder()
+                    .success(false)
+                    .errorMessage(e.getMessage())
+                    .build();
+        }
+    }
+
+
     public ContainerInfo startContainer(String codePath) {
         CreateContainerCmd containerCmd = DOCKER_CLIENT.createContainerCmd(image);
         HostConfig hostConfig = new HostConfig();
@@ -228,5 +324,30 @@ public class DockerDao {
             e.printStackTrace();
         }
     }
-    
+
+    /**
+     * 获取占用内存的情况
+     * @param containerId
+     * @return
+     */
+    public long getContainerMemoryUsage(String containerId) {
+        StatsCmd statsCmd = DOCKER_CLIENT.statsCmd(containerId);
+        AtomicReference<Long> usedMemory = new AtomicReference<>(0L);
+
+        try (ResultCallback.Adapter<Statistics> resultCallback = new ResultCallback.Adapter<Statistics>() {
+            @Override
+            public void onNext(Statistics stats) {
+                MemoryStatsConfig memoryStats = stats.getMemoryStats();
+                usedMemory.set(memoryStats.getUsage());
+                super.onNext(stats);
+            }
+        }) {
+            statsCmd.exec(resultCallback).awaitCompletion();
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException("获取内存使用情况失败: " + e.getMessage(), e);
+        }
+
+        return usedMemory.get();
+    }
+
 }
