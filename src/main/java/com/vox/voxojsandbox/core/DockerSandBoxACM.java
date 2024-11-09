@@ -15,6 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * @author voxcode
+ * @date 2024/11/9 23:23
+ */
 @Slf4j
 @Component
 public class DockerSandBoxACM extends DockerSandboxTemplate{
@@ -30,15 +34,13 @@ public class DockerSandBoxACM extends DockerSandboxTemplate{
             for(String input: inputList) {
                 //将参数写入
                 InputStream inputStream = new ByteArrayInputStream((input+"\n").getBytes(StandardCharsets.UTF_8));
-
                 ExecuteMessage executeMessage = dockerDao.execCmdInteractive(containerId, runCmdNative, inputStream);
-
 //                log.info("内存使用情况："+executeMessage.getMemory());
                 //如果执行出错，不用输入下一个案例，直接返回
                 executeMessageList.add(executeMessage);
                 if(!executeMessage.isSuccess()){
                     executeResponse.setLastInput(input);
-                    log.error("执行错误："+executeMessage.getErrorMessage());
+//                    log.error("执行错误："+executeMessage.getErrorMessage());
                     executeResponse.setMessage("执行出错"+executeMessage.getErrorMessage());
                     return executeMessageList;
                 }

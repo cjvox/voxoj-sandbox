@@ -6,19 +6,29 @@ import com.vox.voxojsandbox.modal.ContainerInfo;
 
 import com.vox.voxojsandbox.modal.ExecuteResponse;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
 import lombok.Data;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.ContextClosedEvent;
 
 import java.io.File;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
+/**
+ * @author voxcode
+ * @date 2024/11/9 23:23
+ */
 @Slf4j
 @Configuration
 @Data
@@ -29,11 +39,13 @@ public class ContainerPoolExecutor {
 
     private Integer maximumPoolSize = Runtime.getRuntime().availableProcessors() * 20;
 
-    private Integer waitQueueSize = 200;
+//    private Integer waitQueueSize = 200;
 
     private Integer keepAliveTime = 5;
 
     private TimeUnit timeUnit = TimeUnit.SECONDS;
+
+    private long getContainTimeout = 5;
 
 
     /**
@@ -41,10 +53,10 @@ public class ContainerPoolExecutor {
      */
     private BlockingQueue<ContainerInfo> containerPool;
 
-    /**
-     * 容器使用排队计数
-     */
-    private AtomicInteger blockingThreadCount;
+//    /**
+//     * 容器使用排队计数
+//     */
+//    private AtomicInteger blockingThreadCount;
 
     /**
      * 可扩展的数量
@@ -59,8 +71,10 @@ public class ContainerPoolExecutor {
     public void initPool() {
 
         // 初始化容器池
+        // 按照lastTime降序，返回time最小的
+//        this.containerPool = new PriorityBlockingQueue<>(maximumPoolSize, Comparator.comparingLong(ContainerInfo::getLastActivityTime));
         this.containerPool = new LinkedBlockingQueue<>(maximumPoolSize);
-        this.blockingThreadCount = new AtomicInteger(0);
+//        this.blockingThreadCount = new AtomicInteger(0);
         this.expandCount = new AtomicInteger(maximumPoolSize - corePoolSize);
 
         // 初始化池中的数据
@@ -112,22 +126,15 @@ public class ContainerPoolExecutor {
 
     private ContainerInfo getContainer() throws InterruptedException {
         if (containerPool.isEmpty()) {
-            // 增加阻塞线程计数
-            try {
-                if (blockingThreadCount.incrementAndGet() >= waitQueueSize && !expandPool()) {
-                    log.error("扩容失败");
-                    return null;
-                }
-                log.info("没有数据，等待数据，当前等待长度：{}", blockingThreadCount.get());
-                // 阻塞等待可用的数据
-                return containerPool.take();
-            } finally {
-                // 减少阻塞线程计数
-                log.info("减少阻塞线程计数");
-                blockingThreadCount.decrementAndGet();
+            // 尝试扩容
+            if (!expandPool()) {
+                log.error("扩容失败");
+                return null;
             }
+            // 阻塞等待可用的数据
+            return containerPool.poll(getContainTimeout,timeUnit);
         }
-        return containerPool.take();
+        return containerPool.poll(getContainTimeout,timeUnit);
     }
 
     /**
@@ -140,7 +147,7 @@ public class ContainerPoolExecutor {
             return;
         }
         // 处理过期的容器
-        containerPool.stream().filter(containerInfo -> {
+        containerPool.stream().limit(needCleanCount).filter(containerInfo -> {
             long lastActivityTime = containerInfo.getLastActivityTime();
             lastActivityTime += timeUnit.toMillis(keepAliveTime);
             return lastActivityTime < currentTime;
@@ -178,9 +185,8 @@ public class ContainerPoolExecutor {
         try {
             containerInfo = getContainer();
             if (containerInfo == null) {
-                return ExecuteResponse.builder().message("不能处理了").build();
+                return ExecuteResponse.builder().message("提交次数过多，成为plus用户解锁更多").build();
             }
-
             log.info("有数据，拿到了: {}", containerInfo);
             ExecuteResponse executeResponse = function.apply(containerInfo);
             if (StringUtils.isNotBlank(executeResponse.getMessage())) {
@@ -193,8 +199,9 @@ public class ContainerPoolExecutor {
             if (containerInfo != null) {
                 ContainerInfo finalContainerInfo = containerInfo;
                 //删除缓存的代码文件
-                dockerDao.execCmd(containerInfo.getContainerId(), new String[]{"rm", "-rf", "/box"});
+                String containerId = containerInfo.getContainerId();
                 CompletableFuture.runAsync(() -> {
+                    dockerDao.execCmd(containerId, new String[]{"rm", "-rf", "/box"});
                     try {
                         // 更新时间
                         log.info("操作完了，还回去");
@@ -217,6 +224,19 @@ public class ContainerPoolExecutor {
                 });
             }
         }
+    }
+
+    /**
+     * 清楚容器池中的容器以及代码文件
+     */
+    @PreDestroy
+    public void onApplicationEvent() {
+        // 批量清理容器以及残余文件
+        List<String> containerIds = this.getContainerPool().stream()
+                .peek(containerInfo -> FileUtil.del(containerInfo.getCodePathName())) // 执行删除操作
+                .map(ContainerInfo::getContainerId) // 获取容器 ID
+                .collect(Collectors.toList()); //
+        dockerDao.cleanContainerBatch(containerIds);
     }
 }
 

@@ -7,6 +7,9 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+/**
+ * @author voxcode
+ */
 @Data
 @Builder
 @AllArgsConstructor
