@@ -257,7 +257,7 @@ public class DockerDao {
     }
 
 
-    public ContainerInfo startContainer(String codePath) {
+    public ContainerInfo startContainer() {
         CreateContainerCmd containerCmd = DOCKER_CLIENT.createContainerCmd(image);
         HostConfig hostConfig = new HostConfig();
         hostConfig.withMemory(memoryLimit);
@@ -280,7 +280,7 @@ public class DockerDao {
         return ContainerInfo
                 .builder()
                 .containerId(containerId)
-                .codePathName(codePath)
+//                .codePathName(codePath)
                 .lastActivityTime(System.currentTimeMillis())
                 .build();
     }

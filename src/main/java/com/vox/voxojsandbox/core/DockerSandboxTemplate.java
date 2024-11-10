@@ -60,7 +60,7 @@ public class DockerSandboxTemplate {
         File codeFile = saveCodeToFile(code,languageCmdEnum);
         String userCodePath = codeFile.getAbsolutePath();
         String userCodeParentPath = codeFile.getParentFile().getAbsolutePath();
-
+        containerInfo.setCodePathName(userCodeParentPath);
         // 2.将文件复制到容器中
         dockerDao.copyFileToContainer(containerId, userCodePath);
 

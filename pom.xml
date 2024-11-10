@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.vox</groupId>
     <artifactId>voxoj-sandbox</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.1.1-SNAPSHOT</version>
     <name>voxoj-sandbox</name>
     <description>voxoj-sandbox</description>
     <url/>

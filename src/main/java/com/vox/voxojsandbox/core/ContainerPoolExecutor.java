@@ -89,23 +89,23 @@ public class ContainerPoolExecutor {
 
     //调用dao创建容器
     private void createNewPool() {
-        // 写入文件
-        String userDir = System.getProperty("user.dir");
-        String codePathName = userDir + File.separator + "tempCode";
-
-        // 把用户的代码隔离存放
-        UUID uuid = UUID.randomUUID();
-        codePathName += File.separator + uuid;
-
-        // 判断代码目录是否存在，没有则新建
-        File codePath = new File(codePathName);
-        if (!codePath.exists()) {
-            boolean mkdir = codePath.mkdirs();
-            if (!mkdir) {
-                log.info("创建代码目录失败");
-            }
-        }
-        ContainerInfo containerInfo = dockerDao.startContainer(codePathName);
+//        // 写入文件
+//        String userDir = System.getProperty("user.dir");
+//        String codePathName = userDir + File.separator + "tempCode";
+//
+//        // 把用户的代码隔离存放
+//        UUID uuid = UUID.randomUUID();
+//        codePathName += File.separator + uuid;
+//
+//        // 判断代码目录是否存在，没有则新建
+//        File codePath = new File(codePathName);
+//        if (!codePath.exists()) {
+//            boolean mkdir = codePath.mkdirs();
+//            if (!mkdir) {
+//                log.info("创建代码目录失败");
+//            }
+//        }
+        ContainerInfo containerInfo = dockerDao.startContainer();
         boolean result = containerPool.offer(containerInfo);
         if (!result) {
             log.error("current capacity: {}, the capacity limit is exceeded...", containerPool.size());
@@ -201,7 +201,8 @@ public class ContainerPoolExecutor {
                 //删除缓存的代码文件
                 String containerId = containerInfo.getContainerId();
                 CompletableFuture.runAsync(() -> {
-                    dockerDao.execCmd(containerId, new String[]{"rm", "-rf", "/box"});
+                    //清理box目录
+                    dockerDao.execCmd(containerId, new String[]{"find", "/box", "-type", "f", "-exec", "rm", "-f", "{}", ";"});
                     try {
                         // 更新时间
                         log.info("操作完了，还回去");
